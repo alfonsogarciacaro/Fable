@@ -116,7 +116,7 @@ class Record(IComparable):
     def toJSON(self) -> str:
         return recordToJSON(this)
 
-    def toString(self) -> str:
+    def __str__(self) -> str:
         return recordToString(self)
 
     def GetHashCode(self) -> int:
@@ -188,7 +188,7 @@ class FSharpException(Exception, IComparable):
     def toJSON(self):
         return recordToJSON(self)
 
-    def toString(self):
+    def __str__(self):
         return recordToString(self)
 
     def GetHashCode(self):

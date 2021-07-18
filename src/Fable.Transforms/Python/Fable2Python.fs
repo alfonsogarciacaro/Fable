@@ -580,14 +580,15 @@ module Util =
     let ofString (s: string) =
        Expression.constant(s)
 
-    let memberFromName (com: IPythonCompiler) (ctx: Context) (memberName: string): Expression * Statement list =
+    let memberFromName (com: IPythonCompiler) (ctx: Context) (memberName: string): Expression =
+        // printfn "MemberName: %A" memberName
         match memberName with
-        | "ToString" -> Expression.identifier("toString"), []
+        | "ToString" -> Expression.identifier("__str__")
         | n when n.StartsWith("Symbol.iterator") ->
             let name = Identifier "__iter__"
-            Expression.name(name), []
-        | n when Naming.hasIdentForbiddenChars n -> Expression.constant(n), []
-        | n -> com.GetIdentifierAsExpr(ctx, n), []
+            Expression.name(name)
+        | n when Naming.hasIdentForbiddenChars n -> Expression.constant(n)
+        | n -> com.GetIdentifierAsExpr(ctx, n)
 
     let get (com: IPythonCompiler) ctx r left memberName subscript =
         // printfn "get: %A" (left, memberName)
@@ -956,7 +957,7 @@ module Util =
         let members =
             members |> List.collect (fun memb ->
                 let info = memb.Info
-                let prop, computed = memberFromName com ctx memb.Name
+                let prop = memberFromName com ctx memb.Name
                 // If compileAsClass is false, it means getters don't have side effects
                 // and can be compiled as object fields (see condition above)
                 if info.IsValue || (not compileAsClass && info.IsGetter) then
@@ -1990,12 +1991,15 @@ module Util =
         let args = Arguments.arguments(args |> List.map Arg.arg)
         args, body
 
-    let declareEntryPoint _com _ctx (funcExpr: Expression) =
-        let argv = emitExpression None "typeof process === 'object' ? process.argv.slice(2) : []" []
-        let main = Expression.call(funcExpr, [ argv ])
+    let declareEntryPoint (com: IPythonCompiler) (ctx: Context) (funcExpr: Expression) =
+        com.GetImportExpr(ctx, "sys") |> ignore
+        let args =emitExpression None "sys.argv[1:]" []
+        let test = Expression.compare(Expression.name("__name__"), [ ComparisonOperator.Eq ], [Expression.constant("__main__")])
+        let main = Expression.call(funcExpr, [ args ]) |> Statement.expr |> List.singleton
+        Statement.if'(test, main)
         // Don't exit the process after leaving main, as there may be a server running
         // Statement.expr(emitExpression funcExpr.loc "process.exit($0)" [main], ?loc=funcExpr.loc)
-        Statement.expr(main)
+
 
     let declareModuleMember ctx isPublic (membName: Identifier) isMutable (expr: Expression) =
         let membName = Expression.name(membName)
@@ -2061,7 +2065,7 @@ module Util =
         else
             ent.FSharpFields
             |> Seq.map (fun field ->
-                let prop, computed = memberFromName com ctx field.Name
+                let prop = memberFromName com ctx field.Name
                 prop)
             |> Seq.toArray
 
@@ -2120,23 +2124,35 @@ module Util =
         //else
         statements
 
+    let nameFromKey (com: IPythonCompiler) (ctx: Context) key =
+        match key with
+        | Expression.Name({Id=ident}) -> ident
+        | Expression.Constant(value=value) ->
+            match value with
+            | :? string as name  -> com.GetIdentifier(ctx, name)
+            | _ -> failwith $"Not a valid value: {value}"
+        | name -> failwith $"Not a valid name: {name}"
+
     let transformAttachedProperty (com: IPythonCompiler) ctx (memb: Fable.MemberDecl) =
         let isStatic = not memb.Info.IsInstance
         //let kind = if memb.Info.IsGetter then ClassGetter else ClassSetter
         let args, body =
             getMemberArgsAndBody com ctx (Attached isStatic) false memb.Args memb.Body
-        let key, computed = memberFromName com ctx memb.Name
+        let key =
+            memberFromName com ctx memb.Name
+            |> nameFromKey com ctx
+
         let self = Arg.arg("self")
         let arguments = { args with Args = self::args.Args }
-        FunctionDef.Create(com.GetIdentifier(ctx, memb.Name), arguments, body = body)
+        FunctionDef.Create(key, arguments, body = body)
         |> List.singleton
 
     let transformAttachedMethod (com: IPythonCompiler) ctx (memb: Fable.MemberDecl) =
         // printfn "transformAttachedMethod"
         let isStatic = not memb.Info.IsInstance
         let makeMethod name args body =
-            let key, computed = memberFromName com ctx name
-            FunctionDef.Create(com.GetIdentifier(ctx,  name), args, body = body)
+            let key = memberFromName com ctx name |> nameFromKey com ctx
+            FunctionDef.Create(key, args, body = body)
         let args, body =
             getMemberArgsAndBody com ctx (Attached isStatic) memb.Info.HasSpread memb.Args memb.Body
         let self = Arg.arg("self")
