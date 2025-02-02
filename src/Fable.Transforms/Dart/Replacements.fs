@@ -3121,24 +3121,23 @@ let globalization
         ObjectExpr([], t, None) |> Some
     | _ -> None
 
-let random (com: ICompiler) (ctx: Context) r t (i: CallInfo) (thisArg: Expr option) (args: Expr list) =
+let random (com: ICompiler) (_ctx: Context) r t (i: CallInfo) (thisArg: Expr option) (args: Expr list) =
     match i.CompiledName, thisArg with
     | ".ctor", _ ->
-        match args with
-        | [] -> Helper.LibCall(com, "Random", "nonSeeded", t, [], [], ?loc = r) |> Some
-        | args ->
-            Helper.LibCall(com, "Random", "seeded", t, args, i.SignatureArgTypes, genArgs = i.GenericArgs, ?loc = r)
-            |> Some
+        Helper.LibCall(com, "Random", "RandomImpl", t, args, i.SignatureArgTypes, genArgs = i.GenericArgs, ?loc = r)
+        |> Some
     // Not yet supported
     | ("NextInt64" | "NextSingle"), _ -> None
     | meth, Some thisArg ->
-        let meth =
-            if meth = "Next" then
-                $"Next{List.length args}"
-            else
-                meth
-
-        Helper.InstanceCall(thisArg, meth, t, args, i.SignatureArgTypes, genArgs = i.GenericArgs, ?loc = r)
+        Helper.InstanceCall(
+            thisArg,
+            Naming.lowerFirst meth,
+            t,
+            args,
+            i.SignatureArgTypes,
+            genArgs = i.GenericArgs,
+            ?loc = r
+        )
         |> Some
     | _ -> None
 

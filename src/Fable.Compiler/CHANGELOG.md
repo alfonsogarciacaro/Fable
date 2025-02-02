@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * [Python] - Print root module and module function comments (by @alfonsogarciacaro)
+* [Dart] - System.Random (by @alfonsogarciacaro)
 
 ## 5.0.0-alpha.9 - 2025-01-28
 
